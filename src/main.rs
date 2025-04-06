@@ -1,91 +1,140 @@
-use anyhow::{Context, Result};
-use log::{info, warn};
-use std::time::Instant;
-mod arti_transport;
+use anyhow::{anyhow, Result};
+use log::{error, info, warn};
+use tokio::task;
+use url::Url;
 
-// URLs for testing
+mod tor_integration;
+
+use tor_integration::{create_tor_client, fetch_via_arti};
+
 const TEST_URL: &str = "https://check.torproject.org/api/ip";
-const TEST_ONION_URL: &str =
+const ONION_TEST_URL: &str =
     "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/";
+const TOR_SOCKS_PROXY: &str = "socks5://127.0.0.1:9050";
+
+// Add simple logging to help debug any Tor issues
+fn setup_logging() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp(None)
+        .init();
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logger
-    env_logger::init();
-    info!("Starting Tor integration PoC");
+    setup_logging();
+    info!("Minreq Tor Integration POC");
+    info!("==========================");
 
-    // Run all test methods, ignoring failures so we can try each approach
-    let methods = [
-        ("Direct Connection", direct_request),
-        (
-            "SOCKS proxy (require running Tor daemon)",
-            socks_proxy_request,
-        ),
-        ("Arti direct integration", arti_direct_request),
-    ];
+    // 1. Direct HTTP request with minreq (wrapped in tokio task)
+    if let Err(e) = test_direct_http().await {
+        error!("Direct HTTP request failed: {}", e);
+    }
 
-    for (name, method) in methods {
-        info!("Testing method: {}", name);
-        let start = Instant::now();
-        match method().await {
-            Ok(response) => {
-                let duration = start.elapsed();
-                info!("✅ Success ({:?}): {}", duration, response);
-            }
-            Err(e) => {
-                warn!("❌ Failed: {:#}", e);
-            }
-        }
-        info!("------------------------");
+    // 2. HTTP request via SOCKS proxy (Tor)
+    if let Err(e) = test_socks_proxy().await {
+        error!("SOCKS proxy request failed: {}", e);
+    }
+
+    // 3. HTTP request via Arti Tor client
+    if let Err(e) = test_arti_integration().await {
+        error!("Arti integration request failed: {}", e);
     }
 
     Ok(())
 }
 
-/// Standard HTTP request without any proxying
-async fn direct_request() -> Result<String> {
-    info!("Making direct HTTP request");
+/// Test direct HTTP request using minreq (wrapped in tokio task for async usage)
+async fn test_direct_http() -> Result<()> {
+    info!("\n1. Testing direct HTTP request with minreq (async wrapper)...");
 
-    let response = async_minreq::get(TEST_URL)
-        .send()
-        .await
-        .context("Failed to send direct request")?;
+    // Since minreq is synchronous, we use tokio's spawn_blocking
+    // to avoid blocking the async runtime
+    let response =
+        task::spawn_blocking(move || minreq::get(TEST_URL).with_timeout(10).send()).await??;
 
-    if !response.status_code.is_success() {
-        anyhow::bail!("HTTP error: {}", response.status_code);
+    if response.status_code >= 200 && response.status_code < 300 {
+        let body = response.as_str()?;
+        info!("✅ Direct HTTP request successful");
+        info!("Status: {}", response.status_code);
+        info!("Response: {}", body);
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Request failed with status code: {}",
+            response.status_code
+        ))
     }
-
-    Ok(response.as_str()?.to_string())
 }
 
-/// HTTP request via SOCKS proxy (requires running Tor daemon)
-async fn socks_proxy_request() -> Result<String> {
-    info!("Making request via SOCKS proxy");
+/// Test HTTP request via SOCKS proxy (Tor)
+async fn test_socks_proxy() -> Result<()> {
+    info!("\n2. Testing HTTP request via SOCKS proxy (Tor)...");
+    info!("   Using proxy: {}", TOR_SOCKS_PROXY);
 
-    // Tor default SOCKS port is 9050
-    let response = async_minreq::get(TEST_URL)
-        .with_proxy("socks5://127.0.0.1:9050")
-        .context("Failed to configure SOCKS proxy")?
-        .send()
-        .await
-        .context("Failed to send request via SOCKS proxy")?;
+    // Parse the proxy URL
+    let proxy_url = Url::parse(TOR_SOCKS_PROXY)?;
 
-    if !response.status_code.is_success() {
-        anyhow::bail!("HTTP error: {}", response.status_code);
+    // Build the request with proxy - also using tokio's spawn_blocking
+    // since this is a synchronous operation
+    let response = task::spawn_blocking(move || {
+        minreq::get(TEST_URL)
+            .with_timeout(10)
+            .with_proxy(minreq::Proxy::new(proxy_url.as_str())?)
+            .send()
+    })
+    .await??;
+
+    if response.status_code >= 200 && response.status_code < 300 {
+        let body = response.as_str()?;
+        info!("✅ SOCKS proxy request successful");
+        info!("Status: {}", response.status_code);
+        info!("Response: {}", body);
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Request failed with status code: {}",
+            response.status_code
+        ))
     }
-
-    Ok(response.as_str()?.to_string())
 }
 
-/// Attempt to use arti directly without a SOCKS proxy
-async fn arti_direct_request() -> Result<String> {
-    info!("Making request via direct arti integration");
+/// Test HTTP request via Arti Tor client
+async fn test_arti_integration() -> Result<()> {
+    info!("\n3. Testing HTTP request via Arti Tor client...");
 
-    let tor_client = arti_transport::create_tor_client().await?;
+    // Create and bootstrap the Tor client
+    let tor_client = create_tor_client().await?;
+    info!("   Tor client bootstrapped successfully");
 
-    // This is a proof of concept for the approach that would need to be implemented
-    // The actual integration would require creating a custom connector for async-minreq
-    let response = arti_transport::fetch_via_tor(&tor_client, TEST_URL).await?;
+    // Try a regular HTTP URL first
+    info!("   Fetching regular HTTP URL via Tor: {}", TEST_URL);
+    let response = fetch_via_arti(&tor_client, TEST_URL).await?;
+    info!("✅ Regular HTTP request via Tor successful");
+    info!("Response: {}", response);
 
-    Ok(response)
+    // Try an onion service
+    info!("   Fetching onion service: {}", ONION_TEST_URL);
+    match fetch_via_arti(&tor_client, ONION_TEST_URL).await {
+        Ok(response) => {
+            info!("✅ Onion service request successful");
+            info!("Response length: {} bytes", response.len());
+            // Print first 100 chars to avoid flooding terminal
+            info!(
+                "Response (truncated): {}",
+                if response.len() > 100 {
+                    &response[..100]
+                } else {
+                    &response
+                }
+            );
+        }
+        Err(e) => {
+            warn!("❌ Onion service request failed: {}", e);
+            warn!(
+                "Note: This is expected if Tor is not running or the onion service is unavailable"
+            );
+        }
+    }
+
+    Ok(())
 }
