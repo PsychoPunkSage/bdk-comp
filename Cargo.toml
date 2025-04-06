@@ -2,26 +2,37 @@
 name = "bdk_arti_esplora"
 version = "0.1.0"
 edition = "2021"
+authors = ["PsychoPunkSage <abhinav.prakash@gmail.com>"]
+description = "Proof of concept for replacing reqwest with async-minreq in rust-esplora-client with Tor integration"
+
 
 [dependencies]
-# HTTP client we want to use in the BDK project
-minreq = { version = "2.11.0", features = ["json-using-serde", "https-rustls"] }
-# Tor client written in Rust
-arti-client = "0.29.0"
-# Common Tor libraries
-tor-rtcompat = "0.29.0"
 # Async runtime
-tokio = { version = "1.29", features = ["full"] }
-# Future utilities
+tokio = { version = "1.28", features = ["full"] }
 futures = "0.3"
-# Logging
-env_logger = "0.11.7"
-log = "0.4"
+async-trait = "0.1.68"
+
+# HTTP clients
+minreq = { version = "2.9", features = ["https", "proxy", "json-using-serde"] }
+
+# Tor libraries
+arti-client = "0.29.0"
+tor-rtcompat = "0.29.0"
+tor-socksproto = "0.29.0"
+
+# Pin explicit versions to avoid compilation error
+tor-cell = "0.29.0"
+
 # Error handling
+thiserror = "1.0"
 anyhow = "1.0"
-thiserror = "2.0.12"
-# Serialization
+
+# Utilities
+url = "2.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-# For custom transport implementation
-async-trait = "0.1"
+log = "0.4"
+env_logger = "0.10"
+
+[features]
+default = []
