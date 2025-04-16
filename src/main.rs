@@ -7,7 +7,7 @@ mod tor_integration;
 
 use tor_integration::{create_tor_client, fetch_via_arti};
 
-const TEST_URL: &str = "https://check.torproject.org/api/ip";
+const TEST_URL: &str = "http://check.torproject.org/api/ip";
 const ONION_TEST_URL: &str =
     "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/";
 const TOR_SOCKS_PROXY: &str = "socks5://127.0.0.1:9050";
@@ -83,6 +83,13 @@ async fn test_socks_proxy() -> Result<()> {
             .send()
     })
     .await??;
+    // let response = task::spawn_blocking(move || {
+    //     minreq::get(TEST_URL)
+    //         .with_timeout(30) // Increase timeout for Tor connections
+    //         .with_proxy(minreq::Proxy::new_socks5("127.0.0.1", 9050)?)
+    //         .send()
+    // })
+    // .await??;
 
     if response.status_code >= 200 && response.status_code < 300 {
         let body = response.as_str()?;
