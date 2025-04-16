@@ -30,44 +30,83 @@ pub async fn fetch_via_arti(
 
     // Parse the URL
     let parsed_url = url::Url::parse(url)?;
-    let host = parsed_url.host_str().unwrap_or("unknown").to_string();
+    // let host = parsed_url.host_str().unwrap_or("unknown").to_string();
+    let host = parsed_url
+        .host_str()
+        .ok_or_else(|| anyhow!("No host in URL"))?;
+    let port = parsed_url.port().unwrap_or_else(|| {
+        if parsed_url.scheme() == "https" {
+            443
+        } else {
+            80
+        }
+    });
+    // Format address for Arti in the required format: hostname:port
+    let addr = format!("{}:{}", host, port);
+    info!("Connecting to Tor address: {}", addr);
 
     // Create a Tor connection to the target
-    let mut stream = tor_client.connect(url).await?;
+    let mut stream = tor_client.connect(&addr).await?;
     debug!("Connection established to target");
+
+    // Format path and query
+    let path = if parsed_url.path().is_empty() {
+        "/"
+    } else {
+        parsed_url.path()
+    };
+    let request_path = if let Some(query) = parsed_url.query() {
+        format!("{}?{}", path, query)
+    } else {
+        path.to_string()
+    };
 
     // Craft a simple HTTP request
     // Note: In a real implementation, you would use a proper HTTP client library
     // This is just for demonstration purposes
     let request = format!(
-        "GET / HTTP/1.0\r\n\
+        "GET {} HTTP/1.1\r\n\
          Host: {}\r\n\
          User-Agent: minreq-tor-poc/0.1.0\r\n\
+         Accept: */*\r\n\
          Connection: close\r\n\
          \r\n",
-        host
+        request_path, host
     );
 
     // Send the request
+    info!("Sending request:\n{}", request);
     stream.write_all(request.as_bytes()).await?;
-    debug!("Request sent");
+    info!("Request sent, waiting for response...");
 
-    // Read the response with a timeout
-    let mut response = String::new();
+    // Read with a much longer timeout
+    let mut response = Vec::new();
+    let mut buffer = vec![0; 4096];
+    let timeout = Duration::from_secs(60); // Increased timeout
 
-    // Set a timeout for reading
-    let timeout = Duration::from_secs(30);
-    match tokio::time::timeout(timeout, stream.read_to_string(&mut response)).await {
-        Ok(result) => {
-            result?;
-            debug!("Response received ({} bytes)", response.len());
+    let read_future = async {
+        loop {
+            match stream.read(&mut buffer).await {
+                Ok(0) => break, // End of stream
+                Ok(n) => {
+                    response.extend_from_slice(&buffer[..n]);
+                    info!("Read {} bytes from stream", n);
+                }
+                Err(e) => return Err(anyhow!("Error reading from stream: {}", e)),
+            }
         }
-        Err(_) => {
-            return Err(anyhow!("Timeout while reading response"));
-        }
+        Ok(())
+    };
+
+    match tokio::time::timeout(timeout, read_future).await {
+        Ok(result) => result?,
+        Err(_) => return Err(anyhow!("Timeout while reading response")),
     }
 
-    Ok(response)
+    // Convert the response bytes to a String
+    let response_string = String::from_utf8(response)
+        .map_err(|e| anyhow!("Failed to parse response as UTF-8: {}", e))?;
+    Ok(response_string)
 }
 
 /// Custom Transport trait which would be implemented for integrating
