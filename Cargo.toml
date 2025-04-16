@@ -16,7 +16,8 @@ async-trait = "0.1.68"
 minreq = { version = "2.9", features = ["https", "proxy", "json-using-serde"] }
 
 # Tor libraries
-arti-client = "0.29.0"
+# arti-client = "0.29.0"
+arti-client = { version = "0.29.0", features = ["onion-service-client"] }
 tor-rtcompat = "0.29.0"
 tor-socksproto = "0.29.0"
 

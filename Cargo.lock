@@ -154,6 +154,8 @@ dependencies = [
  "tor-dirmgr",
  "tor-error",
  "tor-guardmgr",
+ "tor-hsclient",
+ "tor-hscrypto",
  "tor-keymgr",
  "tor-linkspec",
  "tor-llcrypto",
@@ -3559,6 +3561,7 @@ dependencies = [
  "tor-bytes",
  "tor-cert",
  "tor-error",
+ "tor-hscrypto",
  "tor-linkspec",
  "tor-llcrypto",
  "tor-memquota",
@@ -3757,6 +3760,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tor-circmgr",
  "tor-error",
+ "tor-hscrypto",
  "tor-linkspec",
  "tor-llcrypto",
  "tor-netdoc",
@@ -3890,12 +3894,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "tor-hsclient"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6fc936ee17c88f83bab968c21e6f631904fc441cd01e1d0b219b12668134dbe"
+dependencies = [
+ "async-trait",
+ "derive-deftly 1.0.1",
+ "derive_more",
+ "educe",
+ "either",
+ "futures",
+ "itertools 0.14.0",
+ "oneshot-fused-workaround",
+ "postage",
+ "rand 0.9.0",
+ "retry-error",
+ "safelog",
+ "slotmap-careful",
+ "strum 0.27.1",
+ "thiserror 2.0.12",
+ "tor-async-utils",
+ "tor-basic-utils",
+ "tor-bytes",
+ "tor-cell",
+ "tor-checkable",
+ "tor-circmgr",
+ "tor-config",
+ "tor-dirclient",
+ "tor-error",
+ "tor-hscrypto",
+ "tor-keymgr",
+ "tor-linkspec",
+ "tor-llcrypto",
+ "tor-memquota",
+ "tor-netdir",
+ "tor-netdoc",
+ "tor-persist",
+ "tor-proto",
+ "tor-rtcompat",
+ "tracing",
+]
+
+[[package]]
 name = "tor-hscrypto"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e2ddacd739dd691bb3623e045ef07d8660d157f5a882e9b996b79f5e3803fa0"
 dependencies = [
  "data-encoding",
+ "derive-deftly 1.0.1",
  "derive_more",
  "digest",
  "humantime",
@@ -3911,6 +3959,7 @@ dependencies = [
  "tor-error",
  "tor-key-forge",
  "tor-llcrypto",
+ "tor-memquota",
  "tor-units",
  "void",
 ]
@@ -4094,7 +4143,9 @@ dependencies = [
  "async-trait",
  "bitflags 2.9.0",
  "derive_more",
+ "digest",
  "futures",
+ "hex",
  "humantime",
  "itertools 0.14.0",
  "num_enum",
@@ -4103,8 +4154,10 @@ dependencies = [
  "static_assertions",
  "strum 0.27.1",
  "thiserror 2.0.12",
+ "time",
  "tor-basic-utils",
  "tor-error",
+ "tor-hscrypto",
  "tor-linkspec",
  "tor-llcrypto",
  "tor-netdoc",
@@ -4134,6 +4187,7 @@ dependencies = [
  "memchr",
  "once_cell",
  "phf",
+ "rand 0.9.0",
  "serde",
  "serde_with",
  "signature",
@@ -4148,8 +4202,11 @@ dependencies = [
  "tor-cert",
  "tor-checkable",
  "tor-error",
+ "tor-hscrypto",
+ "tor-linkspec",
  "tor-llcrypto",
  "tor-protover",
+ "tor-units",
  "void",
  "weak-table",
  "zeroize",
@@ -4223,6 +4280,7 @@ dependencies = [
  "tor-checkable",
  "tor-config",
  "tor-error",
+ "tor-hscrypto",
  "tor-linkspec",
  "tor-llcrypto",
  "tor-log-ratelim",
@@ -4232,6 +4290,7 @@ dependencies = [
  "tor-units",
  "tracing",
  "typenum",
+ "visibility",
  "void",
  "zeroize",
 ]
