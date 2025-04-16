@@ -3,8 +3,10 @@ use log::{error, info, warn};
 use tokio::task;
 use url::Url;
 
+mod http_socks_bridge;
 mod tor_integration;
 
+use http_socks_bridge::{start_http_socks_bridge, BridgeConfig};
 use tor_integration::{create_tor_client, fetch_via_arti};
 
 const TEST_URL: &str = "http://check.torproject.org/api/ip";
@@ -38,6 +40,11 @@ async fn main() -> Result<()> {
     // 3. HTTP request via Arti Tor client
     if let Err(e) = test_arti_integration().await {
         error!("Arti integration request failed: {}", e);
+    }
+
+    // 4. HTTP request via HTTP-SOCKS bridge
+    if let Err(e) = test_http_socks_bridge().await {
+        error!("HTTP-SOCKS bridge request failed: {}", e);
     }
 
     Ok(())
@@ -83,13 +90,6 @@ async fn test_socks_proxy() -> Result<()> {
             .send()
     })
     .await??;
-    // let response = task::spawn_blocking(move || {
-    //     minreq::get(TEST_URL)
-    //         .with_timeout(30) // Increase timeout for Tor connections
-    //         .with_proxy(minreq::Proxy::new_socks5("127.0.0.1", 9050)?)
-    //         .send()
-    // })
-    // .await??;
 
     if response.status_code >= 200 && response.status_code < 300 {
         let body = response.as_str()?;
@@ -144,4 +144,57 @@ async fn test_arti_integration() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Test HTTP request via HTTP-SOCKS bridge
+/// This demonstrates using minreq with an HTTP proxy that forwards to Tor's SOCKS proxy
+async fn test_http_socks_bridge() -> Result<()> {
+    info!("\n4. Testing HTTP request via HTTP-SOCKS bridge...");
+
+    // Start the HTTP-SOCKS bridge with default configuration
+    // (127.0.0.1:8118 forwarding to 127.0.0.1:9050)
+    let config = BridgeConfig::default();
+    let (bridge_addr, _shutdown_tx) = start_http_socks_bridge(config).await?;
+
+    info!("   HTTP-SOCKS bridge started on {}", bridge_addr);
+    info!("   Using bridge to access: {}", TEST_URL);
+
+    // Create the HTTP proxy URL that minreq will connect to
+    let http_proxy_url = format!("http://{}", bridge_addr);
+
+    // Build the request with HTTP proxy - using tokio's spawn_blocking
+    // since minreq is synchronous
+    let proxy_url = http_proxy_url.clone();
+    let response = task::spawn_blocking(move || {
+        minreq::get(TEST_URL)
+            .with_timeout(20) // Longer timeout for Tor
+            .with_proxy(minreq::Proxy::new(proxy_url.as_str())?)
+            .send()
+    })
+    .await??;
+
+    if response.status_code >= 200 && response.status_code < 300 {
+        let body = response.as_str()?;
+        info!("✅ HTTP-SOCKS bridge request successful");
+        info!("Status: {}", response.status_code);
+        info!("Response: {}", body);
+
+        // Verify we're going through Tor by checking the response from check.torproject.org
+        if body.contains("\"IsTor\":true") {
+            info!("✅ Confirmed request went through Tor!");
+        } else {
+            warn!("⚠️ Request did not go through Tor");
+        }
+
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Request failed with status code: {}",
+            response.status_code
+        ))
+    }
+
+    // Note: We're not shutting down the bridge server here to allow
+    // additional requests during the program's lifetime if needed.
+    // The server will be shut down when the program exits.
 }
